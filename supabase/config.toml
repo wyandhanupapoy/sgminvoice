@@ -1,0 +1,7 @@
+project_id = "bvkwogfhkbluxmmyzanp"
+
+[functions.send-invoice-reminder]
+verify_jwt = true
+
+[functions.daily-invoice-reminder]
+verify_jwt = false
