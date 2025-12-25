@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -365,16 +365,16 @@ const Dashboard = () => {
               { href: '/invoices', label: 'Kelola Faktur', icon: FileText, color: 'text-blue-500' },
               { href: '/settings', label: 'Data Master', icon: Settings, color: 'text-slate-500' },
             ].map((action) => (
-              <a 
+              <Link 
                 key={action.href}
-                href={action.href}
+                to={action.href}
                 className="glass-card rounded-2xl p-5 flex flex-col items-center gap-3 hover:scale-105 transition-all duration-300 group shadow-sm hover:shadow-xl hover:bg-primary/5 border-none"
               >
                 <div className={cn("p-4 rounded-2xl bg-muted group-hover:bg-white group-hover:shadow-lg transition-all duration-300", action.color)}>
                   <action.icon className="w-6 h-6" />
                 </div>
                 <span className="text-xs font-bold text-center tracking-tight">{action.label}</span>
-              </a>
+              </Link>
             ))}
           </div>
         </motion.div>
