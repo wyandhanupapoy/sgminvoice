@@ -39,10 +39,10 @@ const Header = () => {
             </div>
             <div className="min-w-0">
               <h1 className="text-sm sm:text-2xl font-bold tracking-tight text-gradient truncate">
-                PT. Sumber Ganda Mekar
+                INVOICE SGM
               </h1>
               <p className="text-[10px] sm:text-xs font-medium text-muted-foreground uppercase tracking-[0.2em] hidden sm:block">
-                Industrial Steel & Construction
+                PT. Sumber Ganda Mekar
               </p>
             </div>
           </button>

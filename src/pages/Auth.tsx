@@ -99,10 +99,10 @@ const Auth = () => {
             </div>
           </motion.div>
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-            PT. <span className="text-gradient">Sumber Ganda Mekar</span>
+            INVOICE <span className="text-gradient">SGM</span>
           </h1>
           <p className="text-xs sm:text-sm font-bold text-muted-foreground uppercase tracking-[0.2em] mt-3">
-            Sistem Manajemen Terpadu
+            PT. Sumber Ganda Mekar
           </p>
         </div>
 
