@@ -195,6 +195,44 @@ export const usePurchaseForm = () => {
     setFormData(prev => ({ ...prev, notes }));
   }, []);
 
+  const loadInitialData = useCallback((data: any) => {
+    setFormData({
+      applyVat: data.apply_vat,
+      supplier: {
+        id: data.party_id,
+        name: data.party_name,
+        address: data.party_address || '',
+        phone: data.party_phone || '',
+      },
+      transaction: {
+        transactionNumber: data.transaction_number,
+        date: new Date(data.transaction_date),
+        dueDate: data.due_date ? new Date(data.due_date) : null,
+        paymentMethod: data.payment_method,
+        vehicleNumber: data.vehicle_number || '',
+        reference: data.reference || '',
+      },
+      items: data.items.map((item: any) => ({
+        id: item.id,
+        itemCode: item.item_code,
+        itemName: item.item_name,
+        quantity: item.quantity,
+        unit: item.unit,
+        unitPrice: item.unit_price,
+        total: item.total,
+      })),
+      summary: {
+        subtotal: data.subtotal,
+        discount: data.discount,
+        shippingCost: data.shipping_cost,
+        downPayment: data.down_payment,
+        vatAmount: data.vat_amount,
+        grandTotal: data.grand_total,
+      },
+      notes: data.notes || '',
+    });
+  }, []);
+
   return {
     currentStep,
     formData,
@@ -206,6 +244,7 @@ export const usePurchaseForm = () => {
     removeItem,
     updateSummary,
     setNotes,
+    loadInitialData,
     nextStep,
     prevStep,
     resetForm,

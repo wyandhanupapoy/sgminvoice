@@ -3,14 +3,13 @@ import SalesBasicInfo from '@/components/sales/SalesBasicInfo';
 import SalesAddItems from '@/components/sales/SalesAddItems';
 import SalesSummary from '@/components/sales/SalesSummary';
 import { useSalesForm } from '@/hooks/useSalesForm';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const steps = [
   { number: 1, label: 'Informasi Dasar' },
   { number: 2, label: 'Tambah Barang' },
   { number: 3, label: 'Ringkasan' },
 ];
-
-import { motion, AnimatePresence } from 'framer-motion';
 
 const Sales = () => {
   const {

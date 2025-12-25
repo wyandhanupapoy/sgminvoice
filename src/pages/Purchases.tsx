@@ -3,14 +3,13 @@ import PurchaseBasicInfo from '@/components/purchases/PurchaseBasicInfo';
 import PurchaseAddItems from '@/components/purchases/PurchaseAddItems';
 import PurchaseSummary from '@/components/purchases/PurchaseSummary';
 import { usePurchaseForm } from '@/hooks/usePurchaseForm';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const steps = [
   { number: 1, label: 'Informasi Dasar' },
   { number: 2, label: 'Tambah Barang' },
   { number: 3, label: 'Ringkasan' },
 ];
-
-import { motion, AnimatePresence } from 'framer-motion';
 
 const Purchases = () => {
   const {

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Filter, Eye, Printer, Download, FileText, Truck, Receipt, X, AlertTriangle } from 'lucide-react';
+import { Search, Filter, Eye, Printer, Download, FileText, Truck, Receipt, X, AlertTriangle, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -367,6 +367,15 @@ const Invoices = () => {
                       </td>
                       <td className="sticky right-0 bg-card z-10">
                         <div className="flex items-center justify-center gap-0.5 sm:gap-1">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-7 w-7 sm:h-8 sm:w-8 p-0 text-primary hover:text-primary hover:bg-primary/10"
+                            onClick={() => navigate(`/invoices/edit/${invoice.id}?type=${invoice.type}`)}
+                            title="Edit Faktur"
+                          >
+                            <Edit className="w-3 h-3 sm:w-4 sm:h-4" />
+                          </Button>
                           <Button 
                             variant="ghost" 
                             size="sm" 

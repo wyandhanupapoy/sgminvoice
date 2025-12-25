@@ -3,6 +3,7 @@ import { Download, Upload, Database, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,6 +26,7 @@ const BackupRestoreSection = () => {
 
   const [isExporting, setIsExporting] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [progress, setProgress] = useState({ message: '', percentage: 0 });
   const [showRestoreDialog, setShowRestoreDialog] = useState(false);
   const [backupData, setBackupData] = useState<BackupData | null>(null);
 
@@ -84,35 +86,50 @@ const BackupRestoreSection = () => {
 
   const handleRestore = async () => {
     if (!user || !backupData) return;
+
     setIsRestoring(true);
+    setProgress({ message: 'Initializing...', percentage: 0 });
+    
     try {
-      const result = await restoreData(user.id, backupData, {
-        restoreItems,
-        restoreCustomers,
-        restoreSuppliers,
-        restoreSales,
-        restorePurchases,
-        clearExisting,
-      });
+      const result = await restoreData(
+        user.id, 
+        backupData, 
+        {
+          restoreItems,
+          restoreCustomers,
+          restoreSuppliers,
+          restoreSales,
+          restorePurchases,
+          clearExisting,
+        },
+        (p) => setProgress(p)
+      );
 
       if (result.success) {
         toast({
-          title: 'Berhasil',
+          title: "Restore Berhasil",
           description: result.message,
         });
         // Reload page to refresh data
         window.location.reload();
       } else {
         toast({
-          variant: 'destructive',
-          title: 'Error',
+          title: "Restore Gagal",
           description: result.message,
+          variant: "destructive",
         });
       }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "An error occurred during restoration",
+        variant: "destructive",
+      });
     } finally {
       setIsRestoring(false);
       setShowRestoreDialog(false);
       setBackupData(null);
+      setProgress({ message: '', percentage: 0 });
     }
   };
 
@@ -200,6 +217,15 @@ const BackupRestoreSection = () => {
                   
                   <div className="space-y-3 pt-2 border-t">
                     <p className="font-medium">Pilih data yang akan direstore:</p>
+                    {isRestoring && (
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <p className="text-muted-foreground">{progress.message}</p>
+                          <p className="font-medium">{progress.percentage}%</p>
+                        </div>
+                        <Progress value={progress.percentage} className="h-2" />
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
                         <Checkbox 

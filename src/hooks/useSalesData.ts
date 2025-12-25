@@ -147,11 +147,92 @@ export const useSalesData = () => {
     }
   });
 
+  const updateSaleMutation = useMutation({
+    mutationFn: async ({ id, formData }: { id: string; formData: SalesFormData }) => {
+      if (!user) throw new Error('Not authenticated');
+
+      // 1. Update main sale record
+      const { data: saleData, error: saleError } = await supabase
+        .from('sales')
+        .update({
+          customer_id: formData.customer.id,
+          customer_name: formData.customer.name,
+          customer_address: formData.customer.address,
+          customer_phone: formData.customer.phone,
+          customer_npwp: formData.customer.npwp,
+          transaction_date: formData.transaction.date?.toISOString().split('T')[0],
+          due_date: formData.transaction.dueDate?.toISOString().split('T')[0] || null,
+          payment_method: formData.transaction.paymentMethod,
+          vehicle_number: formData.transaction.vehicleNumber,
+          reference: formData.transaction.reference,
+          apply_vat: formData.applyVat,
+          vat_exempt: formData.vatExempt,
+          subtotal: formData.summary.subtotal,
+          discount: formData.summary.discount,
+          shipping_cost: formData.summary.shippingCost,
+          down_payment: formData.summary.downPayment,
+          vat_amount: formData.summary.vatAmount,
+          grand_total: formData.summary.grandTotal,
+          notes: formData.notes,
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (saleError) throw saleError;
+
+      // 2. Delete existing items
+      const { error: deleteError } = await supabase
+        .from('sales_items')
+        .delete()
+        .eq('sales_id', id);
+
+      if (deleteError) throw deleteError;
+
+      // 3. Insert new items
+      if (formData.items.length > 0) {
+        const saleItems = formData.items.map(item => ({
+          sales_id: id,
+          item_code: item.itemCode,
+          item_name: item.itemName,
+          quantity: item.quantity,
+          unit: item.unit,
+          unit_price: item.unitPrice,
+          total: item.total,
+        }));
+
+        const { error: itemsError } = await supabase
+          .from('sales_items')
+          .insert(saleItems);
+
+        if (itemsError) throw itemsError;
+      }
+
+      return saleData;
+    },
+    onSuccess: (data, variables) => {
+      toast({
+        title: 'Berhasil',
+        description: `Transaksi ${variables.formData.transaction.transactionNumber} berhasil diperbarui`,
+      });
+      queryClient.invalidateQueries({ queryKey: ['sales', user?.id] });
+      queryClient.invalidateQueries({ queryKey: ['invoice', variables.id] });
+    },
+    onError: () => {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Gagal memperbarui transaksi',
+      });
+    }
+  });
+
   return {
     sales,
     loading,
     fetchSales,
     saveSale: (formData: SalesFormData) => saveSaleMutation.mutateAsync(formData).then(data => ({ data })).catch(error => ({ error })),
+    updateSale: (id: string, formData: SalesFormData) => updateSaleMutation.mutateAsync({ id, formData }).then(data => ({ data })).catch(error => ({ error })),
     updateSaleStatus: (id: string, status: string) => updateStatusMutation.mutateAsync({ id, status }),
   };
 };

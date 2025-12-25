@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Printer, Copy, CheckCircle, Clock, AlertCircle, FileText, Truck, Receipt } from 'lucide-react';
+import { ArrowLeft, Printer, Copy, CheckCircle, Clock, AlertCircle, FileText, Truck, Receipt, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -158,6 +158,15 @@ ${invoice.discount > 0 ? `Diskon: ${formatRupiah(invoice.discount)}\n` : ''}${in
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            onClick={() => navigate(`/invoices/edit/${invoice.id}?type=${invoice.type}`)} 
+            className="gap-2 text-primary border-primary/20 hover:bg-primary/5"
+          >
+            <Edit className="w-4 h-4" />
+            <span className="hidden sm:inline">Edit</span>
+          </Button>
+
           <Button variant="outline" onClick={handleCopyToClipboard} className="gap-2">
             <Copy className="w-4 h-4" />
             <span className="hidden sm:inline">Salin</span>

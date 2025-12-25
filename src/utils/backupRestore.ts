@@ -137,6 +137,11 @@ export const downloadBackup = (data: BackupData) => {
   URL.revokeObjectURL(url);
 };
 
+export interface RestoreProgress {
+  message: string;
+  percentage: number;
+}
+
 export const restoreData = async (
   userId: string,
   data: BackupData,
@@ -147,142 +152,182 @@ export const restoreData = async (
     restoreSales: boolean;
     restorePurchases: boolean;
     clearExisting: boolean;
-  }
-): Promise<{ success: boolean; message: string }> => {
+  },
+  onProgress?: (progress: RestoreProgress) => void
+): Promise<{ success: boolean; message: string; stats: { items: number; customers: number; suppliers: number; sales: number; purchases: number } }> => {
+  const stats = { items: 0, customers: 0, suppliers: 0, sales: 0, purchases: 0 };
+  
   try {
     // Validate backup data structure before processing
     const validation = validateBackupData(data);
     if (!validation.valid) {
-      return { success: false, message: `Invalid backup file: ${validation.error}` };
+      return { success: false, message: `Invalid backup file: ${validation.error}`, stats };
     }
 
     // Version compatibility check
     if (data.version !== '1.0') {
-      return { success: false, message: `Unsupported backup version: ${data.version}. Expected version 1.0` };
+      return { success: false, message: `Unsupported backup version: ${data.version}. Expected version 1.0`, stats };
     }
 
-    // Clear existing data if requested
+    const totalSteps = (options.restoreItems ? 1 : 0) + 
+                      (options.restoreCustomers ? 1 : 0) + 
+                      (options.restoreSuppliers ? 1 : 0) + 
+                      (options.restoreSales ? (data.sales?.length || 0) / 100 + 1 : 0) + 
+                      (options.restorePurchases ? (data.purchases?.length || 0) / 100 + 1 : 0);
+    
+    let currentStepProgress = 0;
+    const updateProgress = (message: string) => {
+      currentStepProgress++;
+      if (onProgress) {
+        onProgress({
+          message,
+          percentage: Math.min(Math.round((currentStepProgress / totalSteps) * 100), 99),
+        });
+      }
+    };
+
+    updateProgress('Membersihkan data lama...');
+
+    // Clear existing data (Cascading Deletes are much faster)
     if (options.clearExisting) {
-      if (options.restoreSales) {
-        // Delete sales items first (foreign key constraint)
-        const { data: salesData } = await supabase.from('sales').select('id').eq('user_id', userId);
-        if (salesData && salesData.length > 0) {
-          const salesIds = salesData.map(s => s.id);
-          await supabase.from('sales_items').delete().in('sales_id', salesIds);
-          await supabase.from('sales').delete().eq('user_id', userId);
-        }
-      }
-      if (options.restorePurchases) {
-        const { data: purchasesData } = await supabase.from('purchases').select('id').eq('user_id', userId);
-        if (purchasesData && purchasesData.length > 0) {
-          const purchaseIds = purchasesData.map(p => p.id);
-          await supabase.from('purchase_items').delete().in('purchase_id', purchaseIds);
-          await supabase.from('purchases').delete().eq('user_id', userId);
-        }
-      }
-      if (options.restoreItems) {
-        await supabase.from('items').delete().eq('user_id', userId);
-      }
-      if (options.restoreCustomers) {
-        await supabase.from('customers').delete().eq('user_id', userId);
-      }
-      if (options.restoreSuppliers) {
-        await supabase.from('suppliers').delete().eq('user_id', userId);
-      }
+      if (options.restoreSales) await supabase.from('sales').delete().eq('user_id', userId);
+      if (options.restorePurchases) await supabase.from('purchases').delete().eq('user_id', userId);
+      if (options.restoreItems) await supabase.from('items').delete().eq('user_id', userId);
+      if (options.restoreCustomers) await supabase.from('customers').delete().eq('user_id', userId);
+      if (options.restoreSuppliers) await supabase.from('suppliers').delete().eq('user_id', userId);
     }
 
-    // Create ID mappings for relationships
-    const salesIdMap: Record<string, string> = {};
-    const purchasesIdMap: Record<string, string> = {};
-
-    // Restore items
-    if (options.restoreItems && data.items.length > 0) {
+    // 1. Restore items (Batch)
+    if (options.restoreItems && data.items && data.items.length > 0) {
+      updateProgress(`Merestore ${data.items.length} barang...`);
       const items = data.items.map(({ id, created_at, updated_at, ...item }) => ({
         ...item,
         user_id: userId,
       }));
-      const { error } = await supabase.from('items').insert(items);
-      if (error) throw error;
+      
+      const BATCH_SIZE = 200;
+      for (let i = 0; i < items.length; i += BATCH_SIZE) {
+        const batch = items.slice(i, i + BATCH_SIZE);
+        const { error } = await supabase.from('items').insert(batch);
+        if (error) throw error;
+        stats.items += batch.length;
+      }
     }
 
-    // Restore customers
-    if (options.restoreCustomers && data.customers.length > 0) {
+    // 2. Restore customers (Batch)
+    if (options.restoreCustomers && data.customers && data.customers.length > 0) {
+      updateProgress(`Merestore ${data.customers.length} pelanggan...`);
       const customers = data.customers.map(({ id, created_at, updated_at, ...customer }) => ({
         ...customer,
         user_id: userId,
       }));
-      const { error } = await supabase.from('customers').insert(customers);
-      if (error) throw error;
+
+      const BATCH_SIZE = 100;
+      for (let i = 0; i < customers.length; i += BATCH_SIZE) {
+        const batch = customers.slice(i, i + BATCH_SIZE);
+        const { error } = await supabase.from('customers').insert(batch);
+        if (error) throw error;
+        stats.customers += batch.length;
+      }
     }
 
-    // Restore suppliers
-    if (options.restoreSuppliers && data.suppliers.length > 0) {
+    // 3. Restore suppliers (Batch)
+    if (options.restoreSuppliers && data.suppliers && data.suppliers.length > 0) {
+      updateProgress(`Merestore ${data.suppliers.length} supplier...`);
       const suppliers = data.suppliers.map(({ id, created_at, updated_at, ...supplier }) => ({
         ...supplier,
         user_id: userId,
       }));
-      const { error } = await supabase.from('suppliers').insert(suppliers);
-      if (error) throw error;
+
+      const BATCH_SIZE = 100;
+      for (let i = 0; i < suppliers.length; i += BATCH_SIZE) {
+        const batch = suppliers.slice(i, i + BATCH_SIZE);
+        const { error } = await supabase.from('suppliers').insert(batch);
+        if (error) throw error;
+        stats.suppliers += batch.length;
+      }
     }
 
-    // Restore sales with new IDs
-    if (options.restoreSales && data.sales.length > 0) {
-      for (const sale of data.sales) {
-        const { id: oldId, created_at, updated_at, ...saleData } = sale;
-        const { data: newSale, error } = await supabase
-          .from('sales')
-          .insert({ ...saleData, user_id: userId })
-          .select()
-          .single();
-        if (error) throw error;
-        if (newSale) salesIdMap[oldId] = newSale.id;
-      }
+    // 4. Restore sales (Chunked Cycle)
+    if (options.restoreSales && data.sales && data.sales.length > 0) {
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < data.sales.length; i += CHUNK_SIZE) {
+        const chunk = data.sales.slice(i, i + CHUNK_SIZE);
+        updateProgress(`Merestore Penjualan: ${i} sampai ${Math.min(i + CHUNK_SIZE, data.sales.length)}...`);
 
-      // Restore sales items with updated sales_id
-      if (data.salesItems.length > 0) {
-        const salesItems = data.salesItems
-          .filter(item => salesIdMap[item.sales_id])
-          .map(({ id, created_at, ...item }) => ({
+        const salesToInsert = chunk.map(({ created_at, updated_at, ...sale }) => ({
+          ...sale,
+          items: undefined, // Items are inserted separately
+          user_id: userId,
+        }));
+
+        const itemsToInsert = chunk.flatMap(sale => 
+          (sale.items || []).map(item => ({
             ...item,
-            sales_id: salesIdMap[item.sales_id],
-          }));
-        if (salesItems.length > 0) {
-          const { error } = await supabase.from('sales_items').insert(salesItems);
-          if (error) throw error;
+            sales_id: sale.id, // Use the original sale ID for linking
+          }))
+        );
+
+        // Insert this chunk of sales
+        const { error: sError } = await supabase.from('sales').insert(salesToInsert);
+        if (sError) throw sError;
+        stats.sales += salesToInsert.length;
+
+        // Insert this chunk's items
+        if (itemsToInsert.length > 0) {
+          const { error: iError } = await supabase.from('sales_items').insert(itemsToInsert);
+          if (iError) throw iError;
         }
       }
     }
 
-    // Restore purchases with new IDs
-    if (options.restorePurchases && data.purchases.length > 0) {
-      for (const purchase of data.purchases) {
-        const { id: oldId, created_at, updated_at, ...purchaseData } = purchase;
-        const { data: newPurchase, error } = await supabase
-          .from('purchases')
-          .insert({ ...purchaseData, user_id: userId })
-          .select()
-          .single();
-        if (error) throw error;
-        if (newPurchase) purchasesIdMap[oldId] = newPurchase.id;
-      }
+    // 5. Restore purchases (Chunked Cycle)
+    if (options.restorePurchases && data.purchases && data.purchases.length > 0) {
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < data.purchases.length; i += CHUNK_SIZE) {
+        const chunk = data.purchases.slice(i, i + CHUNK_SIZE);
+        updateProgress(`Merestore Pembelian: ${i} sampai ${Math.min(i + CHUNK_SIZE, data.purchases.length)}...`);
 
-      // Restore purchase items with updated purchase_id
-      if (data.purchaseItems.length > 0) {
-        const purchaseItems = data.purchaseItems
-          .filter(item => purchasesIdMap[item.purchase_id])
-          .map(({ id, created_at, ...item }) => ({
+        const purchasesToInsert = chunk.map(({ created_at, updated_at, ...purchase }) => ({
+          ...purchase,
+          items: undefined,
+          user_id: userId,
+        }));
+
+        const itemsToInsert = chunk.flatMap(purchase => 
+          (purchase.items || []).map(item => ({
             ...item,
-            purchase_id: purchasesIdMap[item.purchase_id],
-          }));
-        if (purchaseItems.length > 0) {
-          const { error } = await supabase.from('purchase_items').insert(purchaseItems);
-          if (error) throw error;
+            purchase_id: purchase.id, // Use the original purchase ID for linking
+          }))
+        );
+
+        // Insert this chunk of purchases
+        const { error: pError } = await supabase.from('purchases').insert(purchasesToInsert);
+        if (pError) throw pError;
+        stats.purchases += purchasesToInsert.length;
+
+        // Insert this chunk's items
+        if (itemsToInsert.length > 0) {
+          const { error: iError } = await supabase.from('purchase_items').insert(itemsToInsert);
+          if (iError) throw iError;
         }
       }
     }
 
-    return { success: true, message: 'Data berhasil direstore' };
-  } catch (error: any) {
-    return { success: false, message: error.message || 'Gagal melakukan restore' };
+    if (onProgress) onProgress({ message: 'Selesai!', percentage: 100 });
+
+    return {
+      success: true,
+      message: `Berhasil restore data lengkap`,
+      stats,
+    };
+  } catch (error: unknown) {
+    console.error('Restore error:', error);
+    const message = error instanceof Error ? error.message : 'Gagal melakukan restore data';
+    return {
+      success: false,
+      message,
+      stats,
+    };
   }
 };

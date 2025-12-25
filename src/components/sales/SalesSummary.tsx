@@ -18,6 +18,8 @@ interface SalesSummaryProps {
   onSetNotes: (notes: string) => void;
   onPrev: () => void;
   onReset: () => void;
+  isEdit?: boolean;
+  onUpdate?: () => Promise<void>;
 }
 
 const SalesSummary = ({
@@ -27,6 +29,8 @@ const SalesSummary = ({
   onSetNotes,
   onPrev,
   onReset,
+  isEdit,
+  onUpdate,
 }: SalesSummaryProps) => {
   const { saveSale } = useSalesData();
   const { toast } = useToast();
@@ -36,8 +40,12 @@ const SalesSummary = ({
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await saveSale(formData);
-      onReset();
+      if (isEdit && onUpdate) {
+        await onUpdate();
+      } else {
+        await saveSale(formData);
+        onReset();
+      }
     } finally {
       setIsSaving(false);
     }
@@ -233,7 +241,7 @@ const SalesSummary = ({
           </Button>
           <Button onClick={handleSave} disabled={isSaving} className="gap-2">
             <Save className="w-4 h-4" />
-            {isSaving ? 'Menyimpan...' : 'Simpan Transaksi'}
+            {isSaving ? (isEdit ? 'Memperbarui...' : 'Menyimpan...') : (isEdit ? 'Update Transaksi' : 'Simpan Transaksi')}
           </Button>
         </div>
       </div>

@@ -145,11 +145,90 @@ export const usePurchaseData = () => {
     }
   });
 
+  const updatePurchaseMutation = useMutation({
+    mutationFn: async ({ id, formData }: { id: string; formData: PurchaseFormData }) => {
+      if (!user) throw new Error('Not authenticated');
+
+      // 1. Update main purchase record
+      const { data: purchaseData, error: purchaseError } = await supabase
+        .from('purchases')
+        .update({
+          supplier_id: formData.supplier.id,
+          supplier_name: formData.supplier.name,
+          supplier_address: formData.supplier.address,
+          supplier_phone: formData.supplier.phone,
+          transaction_date: formData.transaction.date?.toISOString().split('T')[0],
+          due_date: formData.transaction.dueDate?.toISOString().split('T')[0] || null,
+          payment_method: formData.transaction.paymentMethod,
+          vehicle_number: formData.transaction.vehicleNumber,
+          reference: formData.transaction.reference,
+          apply_vat: formData.applyVat,
+          subtotal: formData.summary.subtotal,
+          discount: formData.summary.discount,
+          shipping_cost: formData.summary.shippingCost,
+          down_payment: formData.summary.downPayment,
+          vat_amount: formData.summary.vatAmount,
+          grand_total: formData.summary.grandTotal,
+          notes: formData.notes,
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (purchaseError) throw purchaseError;
+
+      // 2. Delete existing items
+      const { error: deleteError } = await supabase
+        .from('purchase_items')
+        .delete()
+        .eq('purchase_id', id);
+
+      if (deleteError) throw deleteError;
+
+      // 3. Insert new items
+      if (formData.items.length > 0) {
+        const purchaseItems = formData.items.map(item => ({
+          purchase_id: id,
+          item_code: item.itemCode,
+          item_name: item.itemName,
+          quantity: item.quantity,
+          unit: item.unit,
+          unit_price: item.unitPrice,
+          total: item.total,
+        }));
+
+        const { error: itemsError } = await supabase
+          .from('purchase_items')
+          .insert(purchaseItems);
+
+        if (itemsError) throw itemsError;
+      }
+
+      return purchaseData;
+    },
+    onSuccess: (data, variables) => {
+      toast({
+        title: 'Berhasil',
+        description: `Transaksi ${variables.formData.transaction.transactionNumber} berhasil diperbarui`,
+      });
+      queryClient.invalidateQueries({ queryKey: ['purchases', user?.id] });
+      queryClient.invalidateQueries({ queryKey: ['invoice', variables.id] });
+    },
+    onError: () => {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Gagal memperbarui transaksi',
+      });
+    }
+  });
+
   return {
     purchases,
     loading,
     fetchPurchases,
     savePurchase: (formData: PurchaseFormData) => savePurchaseMutation.mutateAsync(formData).then(data => ({ data })).catch(error => ({ error })),
+    updatePurchase: (id: string, formData: PurchaseFormData) => updatePurchaseMutation.mutateAsync({ id, formData }).then(data => ({ data })).catch(error => ({ error })),
     updatePurchaseStatus: (id: string, status: string) => updateStatusMutation.mutateAsync({ id, status }),
   };
 };

@@ -18,6 +18,8 @@ interface PurchaseSummaryProps {
   onSetNotes: (notes: string) => void;
   onPrev: () => void;
   onReset: () => void;
+  isEdit?: boolean;
+  onUpdate?: () => Promise<void>;
 }
 
 const PurchaseSummary = ({
@@ -27,6 +29,8 @@ const PurchaseSummary = ({
   onSetNotes,
   onPrev,
   onReset,
+  isEdit,
+  onUpdate,
 }: PurchaseSummaryProps) => {
   const { savePurchase } = usePurchaseData();
   const { toast } = useToast();
@@ -36,8 +40,12 @@ const PurchaseSummary = ({
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await savePurchase(formData);
-      onReset();
+      if (isEdit && onUpdate) {
+        await onUpdate();
+      } else {
+        await savePurchase(formData);
+        onReset();
+      }
     } finally {
       setIsSaving(false);
     }
@@ -227,7 +235,7 @@ const PurchaseSummary = ({
           </Button>
           <Button onClick={handleSave} disabled={isSaving} className="gap-2">
             <Save className="w-4 h-4" />
-            {isSaving ? 'Menyimpan...' : 'Simpan Transaksi'}
+            {isSaving ? (isEdit ? 'Memperbarui...' : 'Menyimpan...') : (isEdit ? 'Update Transaksi' : 'Simpan Transaksi')}
           </Button>
         </div>
       </div>

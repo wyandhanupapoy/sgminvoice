@@ -8,6 +8,7 @@ export interface InvoiceDetail {
   type: 'sales' | 'purchase';
   transaction_number: string;
   transaction_date: string;
+  due_date: string | null;
   payment_method: string;
   vehicle_number: string | null;
   reference: string | null;
@@ -24,6 +25,7 @@ export interface InvoiceDetail {
   created_at: string;
   // Customer/Supplier
   party_name: string;
+  party_id?: string;
   party_address: string | null;
   party_phone: string | null;
   party_npwp?: string | null;
@@ -77,6 +79,7 @@ export const useInvoiceDetail = (id: string | undefined, type: 'sales' | 'purcha
           type: 'sales',
           transaction_number: saleData.transaction_number,
           transaction_date: saleData.transaction_date,
+          due_date: saleData.due_date,
           payment_method: saleData.payment_method || 'transfer',
           vehicle_number: saleData.vehicle_number,
           reference: saleData.reference,
@@ -92,6 +95,7 @@ export const useInvoiceDetail = (id: string | undefined, type: 'sales' | 'purcha
           status: saleData.status || 'pending',
           created_at: saleData.created_at || '',
           party_name: saleData.customer_name,
+          party_id: saleData.customer_id,
           party_address: saleData.customer_address,
           party_phone: saleData.customer_phone,
           party_npwp: saleData.customer_npwp,
@@ -126,6 +130,7 @@ export const useInvoiceDetail = (id: string | undefined, type: 'sales' | 'purcha
           type: 'purchase',
           transaction_number: purchaseData.transaction_number,
           transaction_date: purchaseData.transaction_date,
+          due_date: purchaseData.due_date,
           payment_method: purchaseData.payment_method || 'transfer',
           vehicle_number: purchaseData.vehicle_number,
           reference: purchaseData.reference,
@@ -140,6 +145,7 @@ export const useInvoiceDetail = (id: string | undefined, type: 'sales' | 'purcha
           status: purchaseData.status || 'pending',
           created_at: purchaseData.created_at || '',
           party_name: purchaseData.supplier_name,
+          party_id: purchaseData.supplier_id,
           party_address: purchaseData.supplier_address,
           party_phone: purchaseData.supplier_phone,
           items: (itemsData || []).map(item => ({

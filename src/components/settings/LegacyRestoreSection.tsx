@@ -29,6 +29,7 @@ const LegacyRestoreSection = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isRestoring, setIsRestoring] = useState(false);
+  const [progress, setProgress] = useState({ message: '', percentage: 0 });
   const [showRestoreDialog, setShowRestoreDialog] = useState(false);
   const [backupData, setBackupData] = useState<LegacyBackupData | null>(null);
   const [analysis, setAnalysis] = useState<{
@@ -83,36 +84,53 @@ const LegacyRestoreSection = () => {
 
   const handleRestore = async () => {
     if (!user || !backupData) return;
+
     setIsRestoring(true);
+    setProgress({ message: 'Initializing...', percentage: 0 });
+    
     try {
-      const result = await restoreLegacyData(user.id, backupData, {
+      const restoreOptions = {
         restoreItems,
         restoreCustomers,
         restoreSuppliers,
         restoreSales,
         restorePurchases,
         clearExisting,
-      });
+      };
+
+      const result = await restoreLegacyData(
+        user.id,
+        backupData,
+        restoreOptions,
+        (p) => setProgress(p)
+      );
 
       if (result.success) {
         toast({
-          title: 'Berhasil',
+          title: "Restore Berhasil",
           description: result.message,
         });
         // Reload page to refresh data
         window.location.reload();
       } else {
         toast({
-          variant: 'destructive',
-          title: 'Error',
+          title: "Restore Gagal",
           description: result.message,
+          variant: "destructive",
         });
       }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "An error occurred during restoration",
+        variant: "destructive",
+      });
     } finally {
       setIsRestoring(false);
       setShowRestoreDialog(false);
       setBackupData(null);
       setAnalysis(null);
+      setProgress({ message: '', percentage: 0 });
     }
   };
 
@@ -254,8 +272,11 @@ const LegacyRestoreSection = () => {
 
                     {isRestoring && (
                       <div className="space-y-2">
-                        <p className="text-sm text-muted-foreground">Memproses data...</p>
-                        <Progress value={undefined} className="h-2" />
+                        <div className="flex justify-between text-sm">
+                          <p className="text-muted-foreground">{progress.message}</p>
+                          <p className="font-medium">{progress.percentage}%</p>
+                        </div>
+                        <Progress value={progress.percentage} className="h-2" />
                       </div>
                     )}
                   </>

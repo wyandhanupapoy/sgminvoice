@@ -11,6 +11,7 @@ import Sales from "./pages/Sales";
 import Purchases from "./pages/Purchases";
 import Invoices from "./pages/Invoices";
 import InvoiceDetail from "./pages/InvoiceDetail";
+import EditInvoice from "./pages/EditInvoice";
 import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
@@ -49,6 +50,11 @@ const App = () => (
             <Route path="/invoices/:id" element={
               <ProtectedRoute>
                 <MainLayout><InvoiceDetail /></MainLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/invoices/edit/:id" element={
+              <ProtectedRoute>
+                <MainLayout><EditInvoice /></MainLayout>
               </ProtectedRoute>
             } />
             <Route path="/settings" element={

@@ -193,6 +193,11 @@ const parseStatus = (paymentMethod: string, dp: number, grandTotal: number): str
   return 'paid';
 };
 
+export interface RestoreProgress {
+  message: string;
+  percentage: number;
+}
+
 export const restoreLegacyData = async (
   userId: string,
   data: LegacyBackupData,
@@ -203,44 +208,44 @@ export const restoreLegacyData = async (
     restoreSales: boolean;
     restorePurchases: boolean;
     clearExisting: boolean;
-  }
+  },
+  onProgress?: (progress: RestoreProgress) => void
 ): Promise<{ success: boolean; message: string; stats: { items: number; customers: number; suppliers: number; sales: number; purchases: number } }> => {
   const stats = { items: 0, customers: 0, suppliers: 0, sales: 0, purchases: 0 };
   
   try {
     const analysis = analyzeLegacyBackup(data);
+    const totalSteps = (options.restoreItems ? 1 : 0) + 
+                      (options.restoreCustomers ? 1 : 0) + 
+                      (options.restoreSuppliers ? 1 : 0) + 
+                      (options.restoreSales ? (data.penjualan?.length || 0) / 50 + 1 : 0) + 
+                      (options.restorePurchases ? (data.pembelian?.length || 0) / 50 + 1 : 0);
+    
+    let currentStepProgress = 0;
+    const updateProgress = (message: string) => {
+      currentStepProgress++;
+      if (onProgress) {
+        onProgress({
+          message,
+          percentage: Math.min(Math.round((currentStepProgress / totalSteps) * 100), 99),
+        });
+      }
+    };
 
-    // Clear existing data if requested
+    updateProgress('Membersihkan data lama...');
+
+    // Clear existing data (Cascading Deletes are much faster)
     if (options.clearExisting) {
-      if (options.restoreSales) {
-        const { data: salesData } = await supabase.from('sales').select('id').eq('user_id', userId);
-        if (salesData && salesData.length > 0) {
-          const salesIds = salesData.map(s => s.id);
-          await supabase.from('sales_items').delete().in('sales_id', salesIds);
-          await supabase.from('sales').delete().eq('user_id', userId);
-        }
-      }
-      if (options.restorePurchases) {
-        const { data: purchasesData } = await supabase.from('purchases').select('id').eq('user_id', userId);
-        if (purchasesData && purchasesData.length > 0) {
-          const purchaseIds = purchasesData.map(p => p.id);
-          await supabase.from('purchase_items').delete().in('purchase_id', purchaseIds);
-          await supabase.from('purchases').delete().eq('user_id', userId);
-        }
-      }
-      if (options.restoreItems) {
-        await supabase.from('items').delete().eq('user_id', userId);
-      }
-      if (options.restoreCustomers) {
-        await supabase.from('customers').delete().eq('user_id', userId);
-      }
-      if (options.restoreSuppliers) {
-        await supabase.from('suppliers').delete().eq('user_id', userId);
-      }
+      if (options.restoreSales) await supabase.from('sales').delete().eq('user_id', userId);
+      if (options.restorePurchases) await supabase.from('purchases').delete().eq('user_id', userId);
+      if (options.restoreItems) await supabase.from('items').delete().eq('user_id', userId);
+      if (options.restoreCustomers) await supabase.from('customers').delete().eq('user_id', userId);
+      if (options.restoreSuppliers) await supabase.from('suppliers').delete().eq('user_id', userId);
     }
 
-    // Restore items
+    // 1. Restore items (Batch)
     if (options.restoreItems && data.barang && data.barang.length > 0) {
+      updateProgress(`Merestore ${data.barang.length} barang...`);
       const items = data.barang.map((item) => ({
         item_code: item.code,
         item_name: item.name,
@@ -249,79 +254,80 @@ export const restoreLegacyData = async (
         user_id: userId,
       }));
       
-      // Insert in batches of 100
-      for (let i = 0; i < items.length; i += 100) {
-        const batch = items.slice(i, i + 100);
+      const BATCH_SIZE = 200;
+      for (let i = 0; i < items.length; i += BATCH_SIZE) {
+        const batch = items.slice(i, i + BATCH_SIZE);
         const { error } = await supabase.from('items').insert(batch);
         if (error) throw error;
         stats.items += batch.length;
       }
     }
 
-    // Create customer name to ID mapping
+    // 2. Restore customers (Batch)
     const customerIdMap: Record<string, string> = {};
-    
-    // Restore customers
     if (options.restoreCustomers && analysis.customersCount > 0) {
-      for (const [name, detail] of analysis.customers.entries()) {
-        const { data: newCustomer, error } = await supabase
-          .from('customers')
-          .insert({
-            name,
-            address: detail.address || null,
-            phone: detail.phone || null,
-            npwp: detail.npwp || null,
-            user_id: userId,
-          })
-          .select()
-          .single();
-        
+      updateProgress(`Merestore ${analysis.customersCount} pelanggan...`);
+      const customersToInsert = Array.from(analysis.customers.entries()).map(([name, detail]) => {
+        const id = crypto.randomUUID();
+        customerIdMap[name] = id;
+        return {
+          id,
+          name,
+          address: detail.address || null,
+          phone: detail.phone || null,
+          npwp: detail.npwp || null,
+          user_id: userId,
+        };
+      });
+
+      const BATCH_SIZE = 100;
+      for (let i = 0; i < customersToInsert.length; i += BATCH_SIZE) {
+        const batch = customersToInsert.slice(i, i + BATCH_SIZE);
+        const { error } = await supabase.from('customers').insert(batch);
         if (error) throw error;
-        if (newCustomer) {
-          customerIdMap[name] = newCustomer.id;
-          stats.customers++;
-        }
+        stats.customers += batch.length;
       }
     }
 
-    // Create supplier name to ID mapping
+    // 3. Restore suppliers (Batch)
     const supplierIdMap: Record<string, string> = {};
-
-    // Restore suppliers
     if (options.restoreSuppliers && analysis.suppliersCount > 0) {
-      for (const [name, detail] of analysis.suppliers.entries()) {
-        const { data: newSupplier, error } = await supabase
-          .from('suppliers')
-          .insert({
-            name,
-            address: detail.address || null,
-            phone: detail.phone || null,
-            user_id: userId,
-          })
-          .select()
-          .single();
-        
+      updateProgress(`Merestore ${analysis.suppliersCount} supplier...`);
+      const suppliersToInsert = Array.from(analysis.suppliers.entries()).map(([name, detail]) => {
+        const id = crypto.randomUUID();
+        supplierIdMap[name] = id;
+        return {
+          id,
+          name,
+          address: detail.address || null,
+          phone: detail.phone || null,
+          user_id: userId,
+        };
+      });
+
+      const BATCH_SIZE = 100;
+      for (let i = 0; i < suppliersToInsert.length; i += BATCH_SIZE) {
+        const batch = suppliersToInsert.slice(i, i + BATCH_SIZE);
+        const { error } = await supabase.from('suppliers').insert(batch);
         if (error) throw error;
-        if (newSupplier) {
-          supplierIdMap[name] = newSupplier.id;
-          stats.suppliers++;
-        }
+        stats.suppliers += batch.length;
       }
     }
 
-    // Restore sales
+    // 4. Restore sales (Chunked Cycle to prevent memory overhead)
     if (options.restoreSales && data.penjualan && data.penjualan.length > 0) {
-      for (const sale of data.penjualan) {
-        const paymentMethod = mapPaymentMethod(sale.metodePembayaran);
-        const status = parseStatus(sale.metodePembayaran, sale.dp, sale.grandTotal);
-        
-        // Calculate VAT
-        const hasVat = sale.ppn > 0;
-        const vatAmount = hasVat ? sale.ppn : 0;
-        
-        const { data: newSale, error } = await supabase
-          .from('sales')
-          .insert({
+      const CHUNK_SIZE = 50;
+      for (let i = 0; i < data.penjualan.length; i += CHUNK_SIZE) {
+        const chunk = data.penjualan.slice(i, i + CHUNK_SIZE);
+        updateProgress(`Merestore Penjualan: ${i} sampai ${Math.min(i + CHUNK_SIZE, data.penjualan.length)}...`);
+
+        const salesToInsert = [];
+        const itemsToInsert = [];
+
+        for (const sale of chunk) {
+          const saleId = crypto.randomUUID();
+          salesToInsert.push({
+            id: saleId,
             transaction_number: sale.id,
             transaction_date: sale.tanggal,
             customer_id: customerIdMap[sale.customer] || null,
@@ -333,55 +339,60 @@ export const restoreLegacyData = async (
             discount: sale.discount,
             shipping_cost: sale.shippingCost,
             down_payment: sale.dp,
-            apply_vat: hasVat,
-            vat_amount: vatAmount,
+            apply_vat: sale.ppn > 0,
+            vat_amount: sale.ppn || 0,
             vat_exempt: sale.isPpnDibebaskan,
             grand_total: sale.grandTotal,
             vehicle_number: sale.noKendaraan || null,
-            payment_method: paymentMethod,
+            payment_method: mapPaymentMethod(sale.metodePembayaran),
             notes: sale.notes || null,
             reference: sale.ref || null,
-            status,
+            status: parseStatus(sale.metodePembayaran, sale.dp, sale.grandTotal),
             user_id: userId,
-          })
-          .select()
-          .single();
-        
-        if (error) throw error;
-        
-        // Insert sales items
-        if (newSale && sale.items && sale.items.length > 0) {
-          const salesItems = sale.items.map((item) => ({
-            sales_id: newSale.id,
-            item_code: item.code,
-            item_name: item.name,
-            quantity: item.qty,
-            unit: item.unit,
-            unit_price: item.price,
-            total: item.total,
-          }));
-          
-          const { error: itemsError } = await supabase.from('sales_items').insert(salesItems);
-          if (itemsError) throw itemsError;
+          });
+
+          if (sale.items) {
+            for (const item of sale.items) {
+              itemsToInsert.push({
+                sales_id: saleId,
+                item_code: item.code,
+                item_name: item.name,
+                quantity: item.qty,
+                unit: item.unit,
+                unit_price: item.price,
+                total: item.total,
+              });
+            }
+          }
         }
-        
-        stats.sales++;
+
+        // Insert this chunk of sales
+        const { error: sError } = await supabase.from('sales').insert(salesToInsert);
+        if (sError) throw sError;
+        stats.sales += salesToInsert.length;
+
+        // Insert this chunk's items
+        if (itemsToInsert.length > 0) {
+          const { error: iError } = await supabase.from('sales_items').insert(itemsToInsert);
+          if (iError) throw iError;
+        }
       }
     }
 
-    // Restore purchases
+    // 5. Restore purchases (Chunked Cycle)
     if (options.restorePurchases && data.pembelian && data.pembelian.length > 0) {
-      for (const purchase of data.pembelian) {
-        const paymentMethod = mapPaymentMethod(purchase.metodePembayaran);
-        const status = parseStatus(purchase.metodePembayaran, purchase.dp, purchase.grandTotal);
-        
-        // Calculate VAT
-        const hasVat = purchase.ppn > 0;
-        const vatAmount = hasVat ? purchase.ppn : 0;
-        
-        const { data: newPurchase, error } = await supabase
-          .from('purchases')
-          .insert({
+      const CHUNK_SIZE = 50;
+      for (let i = 0; i < data.pembelian.length; i += CHUNK_SIZE) {
+        const chunk = data.pembelian.slice(i, i + CHUNK_SIZE);
+        updateProgress(`Merestore Pembelian: ${i} sampai ${Math.min(i + CHUNK_SIZE, data.pembelian.length)}...`);
+
+        const purchasesToInsert = [];
+        const itemsToInsert = [];
+
+        for (const purchase of chunk) {
+          const purchaseId = crypto.randomUUID();
+          purchasesToInsert.push({
+            id: purchaseId,
             transaction_number: purchase.id,
             transaction_date: purchase.tanggal,
             supplier_id: supplierIdMap[purchase.pemasok] || null,
@@ -392,39 +403,45 @@ export const restoreLegacyData = async (
             discount: purchase.discount,
             shipping_cost: purchase.shippingCost,
             down_payment: purchase.dp,
-            apply_vat: hasVat,
-            vat_amount: vatAmount,
+            apply_vat: purchase.ppn > 0,
+            vat_amount: purchase.ppn || 0,
             grand_total: purchase.grandTotal,
             vehicle_number: purchase.noKendaraan || null,
-            payment_method: paymentMethod,
+            payment_method: mapPaymentMethod(purchase.metodePembayaran),
             notes: purchase.notes || null,
-            status,
+            status: parseStatus(purchase.metodePembayaran, purchase.dp, purchase.grandTotal),
             user_id: userId,
-          })
-          .select()
-          .single();
-        
-        if (error) throw error;
-        
-        // Insert purchase items
-        if (newPurchase && purchase.items && purchase.items.length > 0) {
-          const purchaseItems = purchase.items.map((item) => ({
-            purchase_id: newPurchase.id,
-            item_code: item.code,
-            item_name: item.name,
-            quantity: item.qty,
-            unit: item.unit,
-            unit_price: item.price,
-            total: item.total,
-          }));
-          
-          const { error: itemsError } = await supabase.from('purchase_items').insert(purchaseItems);
-          if (itemsError) throw itemsError;
+          });
+
+          if (purchase.items) {
+            for (const item of purchase.items) {
+              itemsToInsert.push({
+                purchase_id: purchaseId,
+                item_code: item.code,
+                item_name: item.name,
+                quantity: item.qty,
+                unit: item.unit,
+                unit_price: item.price,
+                total: item.total,
+              });
+            }
+          }
         }
-        
-        stats.purchases++;
+
+        // Insert this chunk of purchases
+        const { error: pError } = await supabase.from('purchases').insert(purchasesToInsert);
+        if (pError) throw pError;
+        stats.purchases += purchasesToInsert.length;
+
+        // Insert this chunk's items
+        if (itemsToInsert.length > 0) {
+          const { error: iError } = await supabase.from('purchase_items').insert(itemsToInsert);
+          if (iError) throw iError;
+        }
       }
     }
+
+    if (onProgress) onProgress({ message: 'Selesai!', percentage: 100 });
 
     return {
       success: true,
@@ -432,6 +449,7 @@ export const restoreLegacyData = async (
       stats,
     };
   } catch (error: unknown) {
+    console.error('Restore error:', error);
     const message = error instanceof Error ? error.message : 'Gagal melakukan restore';
     return {
       success: false,
